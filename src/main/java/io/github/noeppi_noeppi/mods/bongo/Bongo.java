@@ -19,13 +19,17 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.StringTag;
 import net.minecraft.nbt.Tag;
+import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.effect.MobEffectInstance;
+import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.levelgen.Heightmap;
@@ -104,6 +108,9 @@ public class Bongo extends SavedData {
     private long runningUntil = 0;
     private int taskAmountOutOfTime = -1;
     private DyeColor winningTeam;
+    private int countdownTicks = -1;
+    private final Set<UUID> countdownPlayers = new HashSet<>();
+    private ServerLevel countdownLevel = null;
 
     public Bongo() {
         level = null;
@@ -171,6 +178,42 @@ public class Bongo extends SavedData {
 
     public boolean running() {
         return running;
+    }
+
+    public void startCountdown(ServerLevel level, List<ServerPlayer> players) {
+        this.countdownTicks = 600; // 30 seconds
+        this.countdownLevel = level;
+        this.countdownPlayers.clear();
+
+        for (ServerPlayer player : players) {
+            this.countdownPlayers.add(player.getUUID());
+
+            player.setGameMode(GameType.ADVENTURE);
+            player.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 600, 250, false, false));
+            player.addEffect(new MobEffectInstance(MobEffects.JUMP, 600, 250, false, false));
+        }
+    }
+
+    public void tickCountdown() {
+        if (countdownTicks < 0 || countdownLevel == null) return;
+
+        countdownTicks--;
+        if (countdownTicks == 0) {
+            List<ServerPlayer> playersToUnfreeze = countdownLevel.getServer().getPlayerList().getPlayers().stream()
+                    .filter(p -> countdownPlayers.contains(p.getUUID()))
+                    .toList();
+
+            for (ServerPlayer player : playersToUnfreeze) {
+                player.removeEffect(MobEffects.MOVEMENT_SLOWDOWN);
+                player.removeEffect(MobEffects.JUMP);
+                player.setGameMode(GameType.SURVIVAL);
+                player.sendSystemMessage(Component.literal("Go!"));
+            }
+
+            countdownTicks = -1;
+            countdownPlayers.clear();
+            countdownLevel = null;
+        }
     }
 
     public void start() {
@@ -244,6 +287,15 @@ public class Bongo extends SavedData {
                     MinecraftForge.EVENT_BUS.post(new BongoTeleportedEvent(this, gameLevel, team, settings.level().teleporter(), players));
                 }
             }
+
+            // change to adventure and freeze players for 30 seconds
+            for (ServerPlayer player : gameLevel.players()) {
+                player.setGameMode(GameType.ADVENTURE);
+                player.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 20 * 30, 250, false, false));
+                player.addEffect(new MobEffectInstance(MobEffects.JUMP, 20 * 30, 250, false, false));
+            }
+
+            startCountdown(level, gameLevel.players());
         }
         setChanged(true);
         if (level != null) {
@@ -268,6 +320,9 @@ public class Bongo extends SavedData {
             for (UUID uid : uids) {
                 ServerPlayer player = level.getServer().getPlayerList().getPlayer(uid);
                 if (player != null) {
+                    player.setGameMode(GameType.ADVENTURE);
+                    player.removeEffect(MobEffects.MOVEMENT_SLOWDOWN);
+                    player.removeEffect(MobEffects.JUMP);
                     MinecraftForge.EVENT_BUS.post(new BongoStopEvent.Player(this, player.serverLevel(), player));
                     updateMentions(player);
                     player.refreshDisplayName();

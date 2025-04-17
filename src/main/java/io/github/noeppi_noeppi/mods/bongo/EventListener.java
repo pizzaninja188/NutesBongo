@@ -39,6 +39,7 @@ import net.minecraftforge.event.server.ServerStartedEvent;
 import net.minecraftforge.eventbus.api.EventPriority;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.ModList;
+import net.minecraftforge.server.ServerLifecycleHooks;
 
 import javax.annotation.Nonnull;
 import java.io.IOException;
@@ -46,6 +47,15 @@ import java.util.HashMap;
 import java.util.Map;
 
 public class EventListener {
+
+    @SubscribeEvent
+    public void onServerTick(TickEvent.ServerTickEvent event) {
+        if (event.phase == TickEvent.Phase.END) {
+            for (ServerLevel level : ServerLifecycleHooks.getCurrentServer().getAllLevels()) {
+                Bongo.get(level).tickCountdown();
+            }
+        }
+    }
 
     @SubscribeEvent(priority = EventPriority.LOW) // We need to run after JEA
     public void playerJoin(PlayerEvent.PlayerLoggedInEvent event) {
