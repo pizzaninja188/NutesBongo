@@ -19,6 +19,7 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.StringTag;
 import net.minecraft.nbt.Tag;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -26,6 +27,8 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.biome.Biome;
+import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.level.saveddata.SavedData;
 import net.minecraft.world.level.storage.DimensionDataStorage;
 import net.minecraftforge.common.MinecraftForge;
@@ -177,7 +180,7 @@ public class Bongo extends SavedData {
         this.runningSince = System.currentTimeMillis();
         this.ranUntil = 0;
         if (settings.game().time().limit().isPresent()) {
-            this.runningUntil = System.currentTimeMillis() + (1000l * settings.game().time().limit().getAsInt());
+            this.runningUntil = System.currentTimeMillis() + (1000L * settings.game().time().limit().getAsInt());
         } else {
             this.runningUntil = 0;
         }
@@ -200,11 +203,44 @@ public class Bongo extends SavedData {
                     MinecraftForge.EVENT_BUS.post(new BongoStartEvent.Player(this, gameLevel, player));
                 }
             });
+
             Random random = new Random();
+            BlockPos gameCenter = null;
+            int tries = 0;
+            int maxTries = 100; // Avoid infinite loops
+            int teamSpreadRadius = 500;
+
+            // generate random start location and check it is on solid ground
+            while (tries < maxTries) {
+                int centerX = random.nextInt(1_000_000) - 500_000;
+                int centerZ = random.nextInt(1_000_000) - 500_000;
+
+                int y = gameLevel.getHeight(Heightmap.Types.WORLD_SURFACE, centerX, centerZ);
+                BlockPos potentialCenter = new BlockPos(centerX, y, centerZ);
+                ResourceKey<Biome> biomeKey = gameLevel.getBiome(potentialCenter).unwrapKey().orElse(null);
+
+                if (biomeKey != null && !biomeKey.location().getPath().contains("ocean")) {
+                    gameCenter = potentialCenter;
+                    break;
+                }
+
+                tries++;
+            }
+
+            // fallback to 0, 0
+            if (gameCenter == null) {
+                gameCenter = new BlockPos(0, 100, 0);
+            }
+
+            // teleport teams
             for (Team team : getTeams()) {
                 List<ServerPlayer> players = level.getServer().getPlayerList().getPlayers().stream().filter(team::hasPlayer).collect(ImmutableList.toImmutableList());
                 if (!players.isEmpty()) {
-                    settings.level().teleporter().teleportTeam(this, gameLevel, team, players, BlockPos.ZERO, settings.level().teleportRadius(), random);
+                    int offsetX = random.nextInt(teamSpreadRadius * 2 + 1) - teamSpreadRadius;
+                    int offsetZ = random.nextInt(teamSpreadRadius * 2 + 1) - teamSpreadRadius;
+                    BlockPos teamCenter = gameCenter.offset(offsetX, 0, offsetZ);
+
+                    settings.level().teleporter().teleportTeam(this, gameLevel, team, players, teamCenter, settings.level().teleportRadius(), random);
                     MinecraftForge.EVENT_BUS.post(new BongoTeleportedEvent(this, gameLevel, team, settings.level().teleporter(), players));
                 }
             }
