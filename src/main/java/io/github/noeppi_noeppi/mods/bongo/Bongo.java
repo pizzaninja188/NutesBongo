@@ -185,12 +185,15 @@ public class Bongo extends SavedData {
         this.countdownLevel = level;
         this.countdownPlayers.clear();
 
+        CountdownOverlay.startCountdown(countdownTicks);
+
         for (ServerPlayer player : players) {
             this.countdownPlayers.add(player.getUUID());
 
             player.setGameMode(GameType.ADVENTURE);
             player.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 600, 250, false, false));
             player.addEffect(new MobEffectInstance(MobEffects.JUMP, 600, 250, false, false));
+            player.addEffect(new MobEffectInstance(MobEffects.BLINDNESS, 600, 0, false, false));
         }
     }
 
@@ -206,6 +209,7 @@ public class Bongo extends SavedData {
             for (ServerPlayer player : playersToUnfreeze) {
                 player.removeEffect(MobEffects.MOVEMENT_SLOWDOWN);
                 player.removeEffect(MobEffects.JUMP);
+                player.removeEffect(MobEffects.BLINDNESS);
                 player.setGameMode(GameType.SURVIVAL);
                 player.sendSystemMessage(Component.literal("Go!"));
             }
@@ -290,6 +294,12 @@ public class Bongo extends SavedData {
 
             // change to adventure and freeze players for 30 seconds
             for (ServerPlayer player : gameLevel.players()) {
+                player.setHealth(player.getMaxHealth());
+                player.getFoodData().setFoodLevel(20);
+                player.getFoodData().setSaturation(5.0F);
+                player.setAbsorptionAmount(0.0F);
+                player.clearFire();
+                player.getActiveEffects().clear();
                 player.setGameMode(GameType.ADVENTURE);
                 player.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 20 * 30, 250, false, false));
                 player.addEffect(new MobEffectInstance(MobEffects.JUMP, 20 * 30, 250, false, false));
@@ -304,6 +314,7 @@ public class Bongo extends SavedData {
     }
     
     public void stop() {
+        CountdownOverlay.stopCountdown();
         Set<UUID> uids = new HashSet<>();
         for (Team team : teams.values()) {
             uids.addAll(team.getPlayers());
@@ -320,9 +331,16 @@ public class Bongo extends SavedData {
             for (UUID uid : uids) {
                 ServerPlayer player = level.getServer().getPlayerList().getPlayer(uid);
                 if (player != null) {
-                    player.setGameMode(GameType.ADVENTURE);
+                    player.setHealth(player.getMaxHealth());
+                    player.getFoodData().setFoodLevel(20);
+                    player.getFoodData().setSaturation(5.0F);
+                    player.setAbsorptionAmount(0.0F);
+                    player.clearFire();
+                    player.getActiveEffects().clear();
                     player.removeEffect(MobEffects.MOVEMENT_SLOWDOWN);
                     player.removeEffect(MobEffects.JUMP);
+                    player.removeEffect(MobEffects.BLINDNESS);
+                    player.setGameMode(GameType.ADVENTURE);
                     MinecraftForge.EVENT_BUS.post(new BongoStopEvent.Player(this, player.serverLevel(), player));
                     updateMentions(player);
                     player.refreshDisplayName();
