@@ -51,8 +51,9 @@ public class EventListener {
     @SubscribeEvent
     public void onServerTick(TickEvent.ServerTickEvent event) {
         if (event.phase == TickEvent.Phase.END) {
-            for (ServerLevel level : ServerLifecycleHooks.getCurrentServer().getAllLevels()) {
-                Bongo.get(level).tickCountdown();
+            ServerLevel overworld = ServerLifecycleHooks.getCurrentServer().getLevel(Level.OVERWORLD);
+            if (overworld != null) {
+                Bongo.get(overworld).tickCountdown();
             }
         }
     }
