@@ -25,6 +25,7 @@ public class BongoNetwork extends NetworkX {
     protected void registerPackets() {
         registerGame(NetworkDirection.PLAY_TO_CLIENT, new BongoUpdateMessage.Serializer(), () -> BongoUpdateMessage.Handler::new);
         registerGame(NetworkDirection.PLAY_TO_CLIENT, new AdvancementInfoUpdateMessage.Serializer(), () -> AdvancementInfoUpdateMessage.Handler::new);
+        registerGame(NetworkDirection.PLAY_TO_CLIENT, new CountdownPacket.Serializer(), () -> CountdownPacket.Handler::new);
     }
 
     public void updateBongo(Level level) {
