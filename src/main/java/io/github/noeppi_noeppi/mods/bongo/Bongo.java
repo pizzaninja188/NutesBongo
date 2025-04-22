@@ -1,6 +1,5 @@
 package io.github.noeppi_noeppi.mods.bongo;
 
-import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
 import io.github.noeppi_noeppi.mods.bongo.compat.MineMentionIntegration;
@@ -264,7 +263,6 @@ public class Bongo extends SavedData {
                 int centerX = random.nextInt(1_000_000) - 500_000;
                 int centerZ = random.nextInt(1_000_000) - 500_000;
 
-                BlockPos probe = new BlockPos(centerX, 0, centerZ);
                 gameLevel.getChunkSource().getChunk(centerX >> 4, centerZ >> 4, ChunkStatus.FULL, true);
                 int centerY = gameLevel.getHeight(Heightmap.Types.WORLD_SURFACE, centerX, centerZ);
 
@@ -348,11 +346,10 @@ public class Bongo extends SavedData {
     }
 
     public void teleportWhenChunkReady(ServerLevel level, ServerPlayer player, BlockPos pos) {
-        BlockPos chunkPos = new BlockPos(pos.getX(), 0, pos.getZ());
 
         level.getServer().execute(() -> {
             ChunkAccess chunk = level.getChunkSource().getChunkNow(pos.getX() >> 4, pos.getZ() >> 4);
-            if (chunk == null || !(chunk instanceof LevelChunk)) {
+            if (!(chunk instanceof LevelChunk)) {
                 // Not ready yet, retry next tick
                 level.getServer().execute(() -> teleportWhenChunkReady(level, player, pos));
                 return;
