@@ -27,6 +27,8 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.tags.FluidTags;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
+import net.minecraft.world.entity.Mob;
+import net.minecraft.world.entity.MobCategory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.ItemStack;
@@ -39,6 +41,7 @@ import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.level.saveddata.SavedData;
 import net.minecraft.world.level.storage.DimensionDataStorage;
+import net.minecraft.world.phys.AABB;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.fml.ModList;
 import org.moddingx.libx.codec.CodecHelper;
@@ -314,6 +317,14 @@ public class Bongo extends SavedData {
                         for (ServerPlayer player : level.getServer().getPlayerList().getPlayers()) {
                             if (team.hasPlayer(player)) {
                                 teleportWhenChunkReady(gameLevel, player, teamCenter);
+                                // Despawn nearby hostile mobs
+                                int radius = 32;
+                                AABB area = new AABB(player.blockPosition()).inflate(radius);
+                                List<Mob> mobs = player.level().getEntitiesOfClass(Mob.class, area,
+                                        mob -> mob.getType().getCategory() == MobCategory.MONSTER);
+                                for (Mob mob : mobs) {
+                                    mob.discard();
+                                }
                                 player.setRespawnPosition(
                                         gameLevel.dimension(),
                                         teamCenter,
