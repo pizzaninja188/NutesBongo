@@ -193,6 +193,12 @@ public class Bongo extends SavedData {
         this.countdownPlayers.clear();
 
         CountdownOverlay.startCountdown(countdownTicks);
+        this.running = true;
+        this.runningSince = System.currentTimeMillis();
+        this.ranUntil = 0;
+        if (level != null) {
+            BongoMod.getNetwork().updateBongo(level, BongoMessageType.START);
+        }
         CountdownPacket.sendToAll(level, countdownTicks);
 
         for (ServerPlayer player : players) {
@@ -226,12 +232,14 @@ public class Bongo extends SavedData {
         }
     }
 
+    public boolean visuallyRunning() {
+        System.out.println("visuallyRunning: " + this.running + " && " + this.countdownTicks);
+        return this.running && !CountdownOverlay.isActive();
+    }
+
     public void start() {
         this.active = true;
-        this.running = true;
         this.teamWon = false;
-        this.runningSince = System.currentTimeMillis();
-        this.ranUntil = 0;
         if (settings.game().time().limit().isPresent()) {
             this.runningUntil = System.currentTimeMillis() + (1000L * settings.game().time().limit().getAsInt());
         } else {
@@ -268,7 +276,7 @@ public class Bongo extends SavedData {
                 int centerX = random.nextInt(1_000_000) - 500_000;
                 int centerZ = random.nextInt(1_000_000) - 500_000;
 
-                gameLevel.getChunkSource().getChunk(centerX >> 4, centerZ >> 4, ChunkStatus.FULL, true);
+                gameLevel.getChunkSource().getChunk(centerX >> 4, centerZ >> 4, ChunkStatus.LIGHT, true);
                 int centerY = gameLevel.getHeight(Heightmap.Types.WORLD_SURFACE, centerX, centerZ);
 
                 BlockPos potentialCenter = new BlockPos(centerX, centerY, centerZ);
@@ -353,9 +361,6 @@ public class Bongo extends SavedData {
         }
 
         setChanged(true);
-        if (level != null) {
-            BongoMod.getNetwork().updateBongo(level, BongoMessageType.START);
-        }
     }
 
     public void teleportWhenChunkReady(ServerLevel level, ServerPlayer player, BlockPos pos) {

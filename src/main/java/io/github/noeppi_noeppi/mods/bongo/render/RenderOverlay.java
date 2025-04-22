@@ -64,12 +64,10 @@ public class RenderOverlay implements IGuiOverlay {
 
     @Override
     public void render(ForgeGui gui, GuiGraphics graphics, float partialTick, int width, int height) {
-        if (CountdownOverlay.isActive() || !Bongo.get(Minecraft.getInstance().level).running()) {
-            return;
-        }
         Minecraft mc = Minecraft.getInstance();
         if (mc.level != null && mc.player != null && mc.screen == null && (!mc.options.renderDebug || Keybinds.BIG_OVERLAY.isDown())) {
             Bongo bongo = Bongo.get(mc.level);
+            if (!bongo.visuallyRunning()) return;
             Team team = bongo.getTeam(mc.player);
             if (bongo.active() && (!bongo.running() || team != null)) {
                 gui.setupOverlayRenderState(false, false);

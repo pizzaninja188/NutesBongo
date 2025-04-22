@@ -88,7 +88,7 @@ public class CountdownOverlay {
                 }
 
                 // Play click every second, on whole second boundaries (every 20 ticks)
-                if (ticksRemaining > 20 && ticksRemaining <= 200 && ticksRemaining % 20 == 0) {
+                if (ticksRemaining > 20 && ticksRemaining <= 220 && ticksRemaining % 20 == 0) {
                     Minecraft.getInstance().player.playSound(
                             SoundEvents.DISPENSER_FAIL,
                             0.7F,
