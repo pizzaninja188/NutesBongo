@@ -24,6 +24,7 @@ import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.tags.FluidTags;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.player.Player;
@@ -32,6 +33,9 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.biome.Biome;
+import net.minecraft.world.level.chunk.ChunkAccess;
+import net.minecraft.world.level.chunk.ChunkStatus;
+import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.level.saveddata.SavedData;
 import net.minecraft.world.level.storage.DimensionDataStorage;
@@ -207,9 +211,7 @@ public class Bongo extends SavedData {
                     .toList();
 
             for (ServerPlayer player : playersToUnfreeze) {
-                player.removeEffect(MobEffects.MOVEMENT_SLOWDOWN);
-                player.removeEffect(MobEffects.JUMP);
-                player.removeEffect(MobEffects.BLINDNESS);
+                player.removeAllEffects();
                 player.setGameMode(GameType.SURVIVAL);
                 player.sendSystemMessage(Component.literal("Go!"));
             }
@@ -240,6 +242,7 @@ public class Bongo extends SavedData {
             team.teleportsLeft(getSettings().game().teleportsPerTeam());
             uids.addAll(team.getPlayers());
         }
+
         if (level != null) {
             BongoPickLevelEvent event = new BongoPickLevelEvent(this, level);
             MinecraftForge.EVENT_BUS.post(event);
@@ -254,63 +257,115 @@ public class Bongo extends SavedData {
             Random random = new Random();
             BlockPos gameCenter = null;
             int tries = 0;
-            int maxTries = 100; // Avoid infinite loops
+            int maxTries = 100;
             int teamSpreadRadius = 500;
 
-            // generate random start location and check it is on solid ground
             while (tries < maxTries) {
                 int centerX = random.nextInt(1_000_000) - 500_000;
                 int centerZ = random.nextInt(1_000_000) - 500_000;
 
-                int y = gameLevel.getHeight(Heightmap.Types.WORLD_SURFACE, centerX, centerZ);
-                BlockPos potentialCenter = new BlockPos(centerX, y, centerZ);
+                BlockPos probe = new BlockPos(centerX, 0, centerZ);
+                gameLevel.getChunkSource().getChunk(centerX >> 4, centerZ >> 4, ChunkStatus.FULL, true);
+                int centerY = gameLevel.getHeight(Heightmap.Types.WORLD_SURFACE, centerX, centerZ);
+
+                BlockPos potentialCenter = new BlockPos(centerX, centerY, centerZ);
                 ResourceKey<Biome> biomeKey = gameLevel.getBiome(potentialCenter).unwrapKey().orElse(null);
 
                 if (biomeKey != null && !biomeKey.location().getPath().contains("ocean")) {
                     gameCenter = potentialCenter;
                     break;
                 }
-
                 tries++;
             }
 
-            // fallback to 0, 0
             if (gameCenter == null) {
                 gameCenter = new BlockPos(0, 100, 0);
             }
 
-            // teleport teams
-            for (Team team : getTeams()) {
-                List<ServerPlayer> players = level.getServer().getPlayerList().getPlayers().stream().filter(team::hasPlayer).collect(ImmutableList.toImmutableList());
-                if (!players.isEmpty()) {
-                    int offsetX = random.nextInt(teamSpreadRadius * 2 + 1) - teamSpreadRadius;
-                    int offsetZ = random.nextInt(teamSpreadRadius * 2 + 1) - teamSpreadRadius;
-                    BlockPos teamCenter = gameCenter.offset(offsetX, 0, offsetZ);
+            // Schedule teleporting to ensure chunks are fully loaded
+            BlockPos finalGameCenter = gameCenter;
+            level.getServer().execute(() -> {
+                for (Team team : getTeams()) {
+                    if (!team.isEmpty()) {
+                        int x, y, z;
 
-                    settings.level().teleporter().teleportTeam(this, gameLevel, team, players, teamCenter, settings.level().teleportRadius(), random);
-                    MinecraftForge.EVENT_BUS.post(new BongoTeleportedEvent(this, gameLevel, team, settings.level().teleporter(), players));
+                        // Find valid spawn for this team
+                        while (true) {
+                            int offsetX = random.nextInt(teamSpreadRadius * 2 + 1) - teamSpreadRadius;
+                            int offsetZ = random.nextInt(teamSpreadRadius * 2 + 1) - teamSpreadRadius;
+                            x = finalGameCenter.getX() + offsetX;
+                            z = finalGameCenter.getZ() + offsetZ;
+
+                            // Load chunk and get height
+                            gameLevel.getChunkSource().getChunk(x >> 4, z >> 4, ChunkStatus.FULL, true);
+                            y = gameLevel.getHeight(Heightmap.Types.WORLD_SURFACE, x, z);
+                            BlockPos posBelow = new BlockPos(x, y - 1, z);
+
+                            if (!gameLevel.getFluidState(posBelow).is(FluidTags.WATER)) {
+                                break;
+                            }
+                        }
+
+                        int finalX = x;
+                        int finalY = Math.max(y, 64); // avoid void
+                        int finalZ = z;
+                        BlockPos teamCenter = new BlockPos(finalX, finalY, finalZ);
+
+                        for (ServerPlayer player : level.getServer().getPlayerList().getPlayers()) {
+                            if (team.hasPlayer(player)) {
+                                teleportWhenChunkReady(gameLevel, player, teamCenter);
+                                player.setRespawnPosition(
+                                        gameLevel.dimension(),
+                                        teamCenter,
+                                        0.0F,
+                                        true,
+                                        true
+                                );
+                            }
+                        }
+                    }
                 }
-            }
 
-            // change to adventure and freeze players for 30 seconds
-            for (ServerPlayer player : gameLevel.players()) {
-                player.setHealth(player.getMaxHealth());
-                player.getFoodData().setFoodLevel(20);
-                player.getFoodData().setSaturation(5.0F);
-                player.setAbsorptionAmount(0.0F);
-                player.clearFire();
-                player.getActiveEffects().clear();
-                player.setGameMode(GameType.ADVENTURE);
-                player.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 20 * 30, 250, false, false));
-                player.addEffect(new MobEffectInstance(MobEffects.JUMP, 20 * 30, 250, false, false));
-            }
+                // Post-teleport setup
+                for (ServerPlayer player : gameLevel.players()) {
+                    player.setHealth(player.getMaxHealth());
+                    player.getFoodData().setFoodLevel(20);
+                    player.getFoodData().setSaturation(5.0F);
+                    player.setAbsorptionAmount(0.0F);
+                    player.clearFire();
+                    player.removeAllEffects(); // Proper removal of all effects
+                    player.setGameMode(GameType.ADVENTURE);
+                }
 
-            startCountdown(level, gameLevel.players());
+                startCountdown(level, gameLevel.players());
+            });
         }
+
         setChanged(true);
         if (level != null) {
             BongoMod.getNetwork().updateBongo(level, BongoMessageType.START);
         }
+    }
+
+    public void teleportWhenChunkReady(ServerLevel level, ServerPlayer player, BlockPos pos) {
+        BlockPos chunkPos = new BlockPos(pos.getX(), 0, pos.getZ());
+
+        level.getServer().execute(() -> {
+            ChunkAccess chunk = level.getChunkSource().getChunkNow(pos.getX() >> 4, pos.getZ() >> 4);
+            if (chunk == null || !(chunk instanceof LevelChunk)) {
+                // Not ready yet, retry next tick
+                level.getServer().execute(() -> teleportWhenChunkReady(level, player, pos));
+                return;
+            }
+
+            int y = level.getHeight(Heightmap.Types.WORLD_SURFACE, pos.getX(), pos.getZ());
+            y = Math.max(y, 64); // avoid void
+            BlockPos safePos = new BlockPos(pos.getX(), y, pos.getZ());
+
+            player.teleportTo(level, safePos.getX() + 0.5, safePos.getY(), safePos.getZ() + 0.5,
+                    player.getYRot(), player.getXRot());
+            player.setRespawnPosition(level.dimension(), safePos, 0.0F, true, true);
+        });
     }
     
     public void stop() {
@@ -328,19 +383,14 @@ public class Bongo extends SavedData {
         setChanged(true);
         if (level != null) {
             MinecraftForge.EVENT_BUS.post(new BongoStopEvent.Level(this, this.level));
-            for (UUID uid : uids) {
-                ServerPlayer player = level.getServer().getPlayerList().getPlayer(uid);
+            for (ServerPlayer player: level.getServer().getPlayerList().getPlayers()) {
                 if (player != null) {
                     player.setHealth(player.getMaxHealth());
                     player.getFoodData().setFoodLevel(20);
                     player.getFoodData().setSaturation(5.0F);
                     player.setAbsorptionAmount(0.0F);
                     player.clearFire();
-                    player.getActiveEffects().clear();
-                    player.removeEffect(MobEffects.MOVEMENT_SLOWDOWN);
-                    player.removeEffect(MobEffects.JUMP);
-                    player.removeEffect(MobEffects.BLINDNESS);
-                    player.setGameMode(GameType.ADVENTURE);
+                    player.removeAllEffects();
                     MinecraftForge.EVENT_BUS.post(new BongoStopEvent.Player(this, player.serverLevel(), player));
                     updateMentions(player);
                     player.refreshDisplayName();
