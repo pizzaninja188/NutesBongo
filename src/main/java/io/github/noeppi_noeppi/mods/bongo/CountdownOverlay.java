@@ -23,6 +23,10 @@ public class CountdownOverlay {
         ticksRemaining = 0;
     }
 
+    public static boolean isActive() {
+        return ticksRemaining > -20;
+    }
+
     @SubscribeEvent
     public static void onRenderOverlay(RenderGuiOverlayEvent.Pre event) {
         if (ticksRemaining > -20) {

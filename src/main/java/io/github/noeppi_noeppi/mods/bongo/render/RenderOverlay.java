@@ -3,6 +3,7 @@ package io.github.noeppi_noeppi.mods.bongo.render;
 import com.mojang.blaze3d.systems.RenderSystem;
 import io.github.noeppi_noeppi.mods.bongo.Bongo;
 import io.github.noeppi_noeppi.mods.bongo.BongoMod;
+import io.github.noeppi_noeppi.mods.bongo.CountdownOverlay;
 import io.github.noeppi_noeppi.mods.bongo.Keybinds;
 import io.github.noeppi_noeppi.mods.bongo.config.ClientConfig;
 import io.github.noeppi_noeppi.mods.bongo.data.Team;
@@ -63,6 +64,9 @@ public class RenderOverlay implements IGuiOverlay {
 
     @Override
     public void render(ForgeGui gui, GuiGraphics graphics, float partialTick, int width, int height) {
+        if (CountdownOverlay.isActive() || !Bongo.get(Minecraft.getInstance().level).running()) {
+            return;
+        }
         Minecraft mc = Minecraft.getInstance();
         if (mc.level != null && mc.player != null && mc.screen == null && (!mc.options.renderDebug || Keybinds.BIG_OVERLAY.isDown())) {
             Bongo bongo = Bongo.get(mc.level);
@@ -203,13 +207,14 @@ public class RenderOverlay implements IGuiOverlay {
                         } else {
                             long millis;
                             boolean isTimer = true;
+                            long startOffset = 30_000L;
                             if (bongo.won()) {
                                 millis = bongo.ranUntil() - bongo.runningSince();
                             } else if (bongo.getSettings().game().time().limited()) {
                                 isTimer = false;
-                                millis = Math.max(0, bongo.runningUntil() - System.currentTimeMillis());
+                                millis = Math.max(0, bongo.runningUntil() - System.currentTimeMillis() + startOffset);
                             } else {
-                                millis = System.currentTimeMillis() - bongo.runningSince();
+                                millis = System.currentTimeMillis() - (bongo.runningSince() + startOffset);
                             }
                             int decimal = (int) ((millis / 100) % 10);
                             int sec = (int) ((millis / 1000) % 60);
